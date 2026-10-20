@@ -1,6 +1,6 @@
 # Integração Genesys — manual do desenvolvedor
 
-**Versão 1.0 · 20/10/2026 · Cognia** · Suporte: **moraginski@gmail.com**
+**Versão 1.1 · 20/10/2026 · Cognia** · Suporte: **moraginski@gmail.com**
 
 A Integração Genesys entrega, em tempo real, cada evento de vídeo analisado pela Genesys ao sistema da sua empresa.
 Para cada evento, a Genesys faz um `POST` HTTPS com um JSON que traz o tipo do evento, o local, a câmera, a hora, o link
@@ -74,7 +74,7 @@ cliente só vai para o endereço cadastrado naquele cliente.
 
 ## 3. Cadastro, liga/desliga e evento de teste
 
-O cadastro é feito pela revenda, no portal Cognia: **Clientes → ficha do cliente → aba Identidade → Integração Genesys**.
+O cadastro é feito pela revenda, no portal Cognia: **Clientes → ficha do cliente → aba Integração Genesys**.
 
 | campo na tela | no JSON | regra |
 |---|---|---|
@@ -88,8 +88,8 @@ O cadastro é feito pela revenda, no portal Cognia: **Clientes → ficha do clie
 
 ### Evento de teste
 
-O botão **Enviar evento de teste** fica na aba **Automode** da ficha do cliente (a seção Integração Genesys tem um
-atalho para ela). Ele manda um evento fictício pelo mesmo caminho e com a mesma assinatura do envio real, e mostra o
+O botão **Enviar evento de teste** fica na própria aba **Integração Genesys** da ficha do cliente, logo abaixo do cadastro
+(quando o cliente está ligado a uma box). Ele manda um evento fictício pelo mesmo caminho e com a mesma assinatura do envio real, e mostra o
 resultado na tela:
 
 | resultado na tela | o que significa |
@@ -98,8 +98,9 @@ resultado na tela:
 | Recusado | o seu sistema respondeu `4xx` (veja o código) |
 | Erro no servidor | o seu sistema respondeu `5xx` |
 | Tempo esgotado | sem resposta em 10 s |
-| Falha de TLS/DNS | o nome não resolve, o certificado é inválido ou não confere com o nome |
+| Não foi possível conectar com segurança ao endereço | o nome não resolve, o certificado é inválido ou não confere com o nome |
 | Endereço não público | o nome resolve para um endereço interno (rede privada, localhost) |
+| O endereço cadastrado não é válido | o endereço salvo não é um `https://` válido |
 
 O texto da resposta do seu sistema não é exibido nem guardado: só o código HTTP.
 
@@ -745,7 +746,7 @@ Confira também:
 
 | sintoma | causa provável | o que fazer |
 |---|---|---|
-| Teste mostra **Falha de TLS/DNS** | o nome não resolve, certificado vencido, autoassinado ou de outro nome | teste com `curl -v https://seu-endereco`; use certificado válido (por exemplo Let's Encrypt) |
+| Teste mostra **Não foi possível conectar com segurança ao endereço** | o nome não resolve, certificado vencido, autoassinado ou de outro nome | teste com `curl -v https://seu-endereco`; use certificado válido (por exemplo Let's Encrypt) |
 | Teste mostra **Endereço não público** | o nome resolve para IP interno (10.x, 192.168.x, 127.x) | publique o receptor na internet ou num proxy público |
 | Teste mostra **Tempo esgotado** | firewall bloqueando, ou o receptor demora mais de 10 s | libere a porta 443 (ou a do endereço); responda antes de processar |
 | Teste mostra **Recusado (401/403)** | o seu receptor recusou a assinatura ou o token | confira o token cadastrado e se a assinatura usa o corpo cru (bytes), não o JSON reformatado |
@@ -816,6 +817,7 @@ formato, na maioria dos casos basta cadastrar o endereço e o token. Os pontos e
 | versão | data | mudança |
 |---|---|---|
 | 1.0 | 20/10/2026 | primeira versão publicada |
+| 1.1 | 20/10/2026 | cadastro e teste numa aba só ("Integração Genesys"); rótulos do resultado do teste em português simples |
 
 Mudanças compatíveis (campo novo, tipo novo) entram sem aviso prévio. Mudanças incompatíveis mudam o `User-Agent`
 (`cognia-box-webhook/2`) e são avisadas com antecedência a quem tem integração ativa.

@@ -26,7 +26,7 @@ hr{border:0;border-top:1px solid var(--line);margin:2em 0}
 <main>
 
 <h1 id="integração-genesys--manual-do-desenvolvedor">Integração Genesys — manual do desenvolvedor</h1>
-<p><strong>Versão 1.0 · 20/10/2026 · Cognia</strong> · Suporte: <strong>moraginski@gmail.com</strong></p>
+<p><strong>Versão 1.1 · 20/10/2026 · Cognia</strong> · Suporte: <strong>moraginski@gmail.com</strong></p>
 <p>A Integração Genesys entrega, em tempo real, cada evento de vídeo analisado pela Genesys ao sistema da sua empresa.
 Para cada evento, a Genesys faz um <code>POST</code> HTTPS com um JSON que traz o tipo do evento, o local, a câmera, a hora, o link
 da foto e o link da página com o vídeo.</p>
@@ -89,7 +89,7 @@ cliente só vai para o endereço cadastrado naquele cliente.</p>
 </ol>
 <hr />
 <h2 id="3-cadastro-ligadesliga-e-evento-de-teste">3. Cadastro, liga/desliga e evento de teste</h2>
-<p>O cadastro é feito pela revenda, no portal Cognia: <strong>Clientes → ficha do cliente → aba Identidade → Integração Genesys</strong>.</p>
+<p>O cadastro é feito pela revenda, no portal Cognia: <strong>Clientes → ficha do cliente → aba Integração Genesys</strong>.</p>
 <div class="tab"><table>
 <thead>
 <tr>
@@ -122,8 +122,8 @@ cliente só vai para o endereço cadastrado naquele cliente.</p>
 <li>Ao <strong>religar</strong>, só os eventos novos são enviados. O período desligado não é reenviado.</li>
 </ul>
 <h3 id="evento-de-teste">Evento de teste</h3>
-<p>O botão <strong>Enviar evento de teste</strong> fica na aba <strong>Automode</strong> da ficha do cliente (a seção Integração Genesys tem um
-atalho para ela). Ele manda um evento fictício pelo mesmo caminho e com a mesma assinatura do envio real, e mostra o
+<p>O botão <strong>Enviar evento de teste</strong> fica na própria aba <strong>Integração Genesys</strong> da ficha do cliente, logo abaixo do cadastro
+(quando o cliente está ligado a uma box). Ele manda um evento fictício pelo mesmo caminho e com a mesma assinatura do envio real, e mostra o
 resultado na tela:</p>
 <div class="tab"><table>
 <thead>
@@ -150,12 +150,16 @@ resultado na tela:</p>
 <td>sem resposta em 10 s</td>
 </tr>
 <tr>
-<td>Falha de TLS/DNS</td>
+<td>Não foi possível conectar com segurança ao endereço</td>
 <td>o nome não resolve, o certificado é inválido ou não confere com o nome</td>
 </tr>
 <tr>
 <td>Endereço não público</td>
 <td>o nome resolve para um endereço interno (rede privada, localhost)</td>
+</tr>
+<tr>
+<td>O endereço cadastrado não é válido</td>
+<td>o endereço salvo não é um <code>https://</code> válido</td>
 </tr>
 </tbody>
 </table></div>
@@ -1032,7 +1036,7 @@ except urllib.error.HTTPError as e:
 </thead>
 <tbody>
 <tr>
-<td>Teste mostra <strong>Falha de TLS/DNS</strong></td>
+<td>Teste mostra <strong>Não foi possível conectar com segurança ao endereço</strong></td>
 <td>o nome não resolve, certificado vencido, autoassinado ou de outro nome</td>
 <td>teste com <code>curl -v https://seu-endereco</code>; use certificado válido (por exemplo Let's Encrypt)</td>
 </tr>
@@ -1165,6 +1169,11 @@ formato, na maioria dos casos basta cadastrar o endereço e o token. Os pontos e
 <td>1.0</td>
 <td>20/10/2026</td>
 <td>primeira versão publicada</td>
+</tr>
+<tr>
+<td>1.1</td>
+<td>20/10/2026</td>
+<td>cadastro e teste numa aba só ("Integração Genesys"); rótulos do resultado do teste em português simples</td>
 </tr>
 </tbody>
 </table></div>
