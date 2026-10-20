@@ -1,0 +1,1180 @@
+<!doctype html><html lang="pt-BR"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Integração Genesys — manual do desenvolvedor</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;600;700&display=swap">
+<style>
+:root{--bg:#fbfaf7;--fg:#1d2433;--muted:#5b6476;--line:#e3e0d8;--card:#ffffff;--code:#f2efe8;--accent:#0f7b6c;--accent2:#0b5d52}
+@media (prefers-color-scheme: dark){:root:not([data-theme="light"]){--bg:#11161f;--fg:#e6e9ef;--muted:#9aa3b2;--line:#273042;--card:#161d29;--code:#1b2331;--accent:#3cc7b1;--accent2:#7fe0cf;color-scheme:dark}}
+:root[data-theme="dark"]{--bg:#11161f;--fg:#e6e9ef;--muted:#9aa3b2;--line:#273042;--card:#161d29;--code:#1b2331;--accent:#3cc7b1;--accent2:#7fe0cf;color-scheme:dark}
+body{background:var(--bg);color:var(--fg);font:16px/1.65 "IBM Plex Sans",system-ui,sans-serif;margin:0}
+main{max-width:860px;margin:0 auto;padding-block:40px 80px;padding-inline:16px}
+.aviso{border:1px solid var(--accent);background:var(--card);border-radius:10px;padding:12px 16px;margin-bottom:28px;font-size:14px;color:var(--muted)}
+h1{font-size:2rem;line-height:1.2;text-wrap:balance;margin:0 0 .3em}
+h2{font-size:1.35rem;margin-top:2.6em;padding-top:.6em;border-top:1px solid var(--line);text-wrap:balance}
+h3{font-size:1.08rem;margin-top:1.8em}
+a{color:var(--accent)} a:hover{color:var(--accent2)}
+code{font-family:"IBM Plex Mono",ui-monospace,monospace;font-size:.88em;background:var(--code);padding:.1em .35em;border-radius:4px}
+pre{background:var(--code);border:1px solid var(--line);border-radius:8px;padding:14px 16px;overflow-x:auto;font-size:13.5px;line-height:1.5}
+pre code{background:none;padding:0}
+pre.mermaid{background:var(--card);text-align:center}
+.tab{overflow-x:auto;margin:1em 0}
+table{border-collapse:collapse;width:100%;font-size:14.5px;font-variant-numeric:tabular-nums}
+th,td{border-bottom:1px solid var(--line);padding:8px 10px;text-align:left;vertical-align:top}
+th{color:var(--muted);font-weight:600;font-size:13px;text-transform:uppercase;letter-spacing:.04em}
+details{border:1px solid var(--line);border-radius:8px;padding:6px 14px;margin:10px 0;background:var(--card)}
+summary{cursor:pointer;padding:6px 0}
+hr{border:0;border-top:1px solid var(--line);margin:2em 0}
+</style></head><body>
+<main>
+
+<h1 id="integração-genesys--manual-do-desenvolvedor">Integração Genesys — manual do desenvolvedor</h1>
+<p><strong>Versão 1.0 · 20/10/2026 · Cognia</strong> · Suporte: <strong>moraginski@gmail.com</strong></p>
+<p>A Integração Genesys entrega, em tempo real, cada evento de vídeo analisado pela Genesys ao sistema da sua empresa.
+Para cada evento, a Genesys faz um <code>POST</code> HTTPS com um JSON que traz o tipo do evento, o local, a câmera, a hora, o link
+da foto e o link da página com o vídeo.</p>
+<p>Este manual é para quem vai <strong>receber</strong> os eventos: o time de desenvolvimento do software de monitoramento, da central
+de operações ou do sistema que vai consumir o alerta.</p>
+<hr />
+<h2 id="sumário">Sumário</h2>
+<ol>
+<li><a href="#1-como-funciona">Como funciona</a></li>
+<li><a href="#2-início-rápido">Início rápido</a></li>
+<li><a href="#3-cadastro-ligadesliga-e-evento-de-teste">Cadastro, liga/desliga e evento de teste</a></li>
+<li><a href="#4-a-requisição">A requisição</a></li>
+<li><a href="#5-campos-do-json">Campos do JSON</a></li>
+<li><a href="#6-tipos-de-evento">Tipos de evento</a></li>
+<li><a href="#7-exemplos-um-por-tipo">Exemplos, um por tipo</a></li>
+<li><a href="#8-foto-e-vídeo">Foto e vídeo</a></li>
+<li><a href="#9-resposta-retentativas-e-prazos">Resposta, retentativas e prazos</a></li>
+<li><a href="#10-ordem-e-duplicidade">Ordem e duplicidade</a></li>
+<li><a href="#11-segurança-e-verificação-da-assinatura">Segurança e verificação da assinatura</a></li>
+<li><a href="#12-receptor-completo-de-exemplo">Receptor completo de exemplo</a></li>
+<li><a href="#13-testar-o-seu-receptor-sem-a-genesys">Testar o seu receptor sem a Genesys</a></li>
+<li><a href="#14-solução-de-problemas">Solução de problemas</a></li>
+<li><a href="#15-perguntas-frequentes">Perguntas frequentes</a></li>
+<li><a href="#16-compatibilidade">Compatibilidade</a></li>
+<li><a href="#17-histórico-de-versões">Histórico de versões</a></li>
+<li><a href="#18-suporte">Suporte</a></li>
+</ol>
+<hr />
+<h2 id="1-como-funciona">1. Como funciona</h2>
+<pre class="mermaid">sequenceDiagram
+    participant C as Câmera do cliente
+    participant G as Genesys (análise de vídeo)
+    participant S as Seu sistema
+    C-&gt;&gt;G: vídeo
+    G-&gt;&gt;G: detecta o evento e abre o alarme na central
+    G-&gt;&gt;S: POST https://seu-endereco (JSON + assinatura)
+    S--&gt;&gt;G: 2xx (recebido)
+    S-&gt;&gt;G: GET event_thumb / event_url (foto e vídeo, quando precisar)
+</pre>
+<ol>
+<li>A câmera do cliente gera um evento (pessoa, veículo, placa em lista, permanência etc.), e a análise da Genesys o
+   transforma em alarme na central de operações.</li>
+<li><strong>Todo evento que vira alarme na central também é enviado a você.</strong> A Genesys não filtra por tipo nem por confiança:
+   você recebe todos e decide o que usar.</li>
+<li>O envio sai poucos segundos depois do evento (em geral em até 30 s).</li>
+<li>O seu sistema responde <code>2xx</code> e o evento está entregue. Se não responder, a Genesys tenta de novo (seção 9).</li>
+<li>A foto e o vídeo ficam disponíveis por <strong>7 dias</strong> pelos links do JSON, sem login.</li>
+</ol>
+<p>A integração é ligada <strong>por cliente</strong> (local monitorado). Cada cliente tem o seu endereço e o seu token. Um evento de um
+cliente só vai para o endereço cadastrado naquele cliente.</p>
+<hr />
+<h2 id="2-início-rápido">2. Início rápido</h2>
+<ol>
+<li><strong>Publique um endereço HTTPS</strong> que aceite <code>POST</code> com JSON, por exemplo <code>https://eventos.suaempresa.com.br/genesys</code>.
+   O certificado precisa ser válido para o nome do endereço.</li>
+<li><strong>Combine um token</strong> com a revenda que atende você: um texto secreto de 1 a 200 caracteres, como uma senha longa.</li>
+<li><strong>A revenda cadastra</strong> o endereço e o token na ficha do cliente (seção 3) e clica em <strong>Enviar evento de teste</strong>.</li>
+<li><strong>No seu sistema</strong>, confira o token ou a assinatura (seção 11), responda <code>200</code> rápido e grave o evento.</li>
+<li><strong>Deduplique</strong> por <code>event_id</code> (seção 10). Pronto.</li>
+</ol>
+<hr />
+<h2 id="3-cadastro-ligadesliga-e-evento-de-teste">3. Cadastro, liga/desliga e evento de teste</h2>
+<p>O cadastro é feito pela revenda, no portal Cognia: <strong>Clientes → ficha do cliente → aba Identidade → Integração Genesys</strong>.</p>
+<div class="tab"><table>
+<thead>
+<tr>
+<th>campo na tela</th>
+<th>no JSON</th>
+<th>regra</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Endereço</td>
+<td>—</td>
+<td><code>https://</code> obrigatório; host público (sem IP interno, sem usuário/senha na URL). Pode ter caminho e porta (<code>https://host:8443/caminho</code>). Redirecionamento não é seguido.</td>
+</tr>
+<tr>
+<td>Chave de acesso</td>
+<td><code>token</code></td>
+<td>1 a 200 caracteres. Depois de salva, a tela mostra só "definida" e nunca mais a exibe.</td>
+</tr>
+<tr>
+<td>Ligada / Desligada</td>
+<td>—</td>
+<td>Desligar pausa o envio <strong>sem apagar</strong> o endereço nem a chave. Religar não pede a chave de novo.</td>
+</tr>
+</tbody>
+</table></div>
+<ul>
+<li>Mudanças (endereço, chave, ligar ou desligar) valem em <strong>até 15 minutos</strong>.</li>
+<li>Ao <strong>desligar</strong>, os envios ainda pendentes daquele cliente são cancelados.</li>
+<li>Ao <strong>religar</strong>, só os eventos novos são enviados. O período desligado não é reenviado.</li>
+</ul>
+<h3 id="evento-de-teste">Evento de teste</h3>
+<p>O botão <strong>Enviar evento de teste</strong> fica na aba <strong>Automode</strong> da ficha do cliente (a seção Integração Genesys tem um
+atalho para ela). Ele manda um evento fictício pelo mesmo caminho e com a mesma assinatura do envio real, e mostra o
+resultado na tela:</p>
+<div class="tab"><table>
+<thead>
+<tr>
+<th>resultado na tela</th>
+<th>o que significa</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Aceito</td>
+<td>o seu sistema respondeu <code>2xx</code></td>
+</tr>
+<tr>
+<td>Recusado</td>
+<td>o seu sistema respondeu <code>4xx</code> (veja o código)</td>
+</tr>
+<tr>
+<td>Erro no servidor</td>
+<td>o seu sistema respondeu <code>5xx</code></td>
+</tr>
+<tr>
+<td>Tempo esgotado</td>
+<td>sem resposta em 10 s</td>
+</tr>
+<tr>
+<td>Falha de TLS/DNS</td>
+<td>o nome não resolve, o certificado é inválido ou não confere com o nome</td>
+</tr>
+<tr>
+<td>Endereço não público</td>
+<td>o nome resolve para um endereço interno (rede privada, localhost)</td>
+</tr>
+</tbody>
+</table></div>
+<p>O texto da resposta do seu sistema não é exibido nem guardado: só o código HTTP.</p>
+<p>Como reconhecer o evento de teste:</p>
+<ul>
+<li><code>camera_name</code> = <code>"TESTE Cognia"</code>;</li>
+<li><code>camera_id</code> termina em <code>-TESTE</code>;</li>
+<li><code>event_id</code> termina em <code>-teste-AAAAMMDDHHMMSS</code>.</li>
+</ul>
+<p>Os links <code>event_url</code> e <code>event_thumb</code> do teste respondem <code>404</code> de propósito, porque não existe evento real por trás.</p>
+<pre><code class="language-json">{
+  &quot;event_id&quot;: &quot;BX-0002-COG-01-teste-20261020143005&quot;,
+  &quot;camera_id&quot;: &quot;BX-0002-COG-01-TESTE&quot;,
+  &quot;client_id&quot;: &quot;detectia__residencial_aurora&quot;,
+  &quot;camera_name&quot;: &quot;TESTE Cognia&quot;,
+  &quot;event_at&quot;: &quot;2026-10-20 11:30:05&quot;,
+  &quot;token&quot;: &quot;seu-token&quot;,
+  &quot;event_description&quot;: &quot;Detecção de pessoas&quot;,
+  &quot;camera_address&quot;: &quot;Rua Exemplo, 100 - Centro, Campinas - SP, 13010-000&quot;,
+  &quot;app_client_id&quot;: 0,
+  &quot;event_url&quot;: &quot;https://det.cogniagenesys.com.br/p/e/teste&quot;,
+  &quot;event_thumb&quot;: &quot;https://det.cogniagenesys.com.br/p/e/teste&quot;,
+  &quot;client_name&quot;: &quot;Residencial Aurora&quot;,
+  &quot;client_document_number&quot;: &quot;&quot;,
+  &quot;client_address&quot;: &quot;Rua Exemplo, 100 - Centro, Campinas - SP, 13010-000&quot;,
+  &quot;event_type_id&quot;: 1
+}
+</code></pre>
+<hr />
+<h2 id="4-a-requisição">4. A requisição</h2>
+<pre><code>POST &lt;seu endereço&gt;
+Content-Type: application/json
+User-Agent: cognia-box-webhook/1
+X-Cognia-Ts: 1760970605
+X-Cognia-Assinatura: sha256=3f1c0e4b7a9d2c5e8f6a1b0d3c7e9f2a4b6c8d0e1f3a5b7c9d2e4f6a8b0c1d3e
+</code></pre>
+<div class="tab"><table>
+<thead>
+<tr>
+<th>cabeçalho</th>
+<th>conteúdo</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>Content-Type</code></td>
+<td>sempre <code>application/json</code></td>
+</tr>
+<tr>
+<td><code>User-Agent</code></td>
+<td><code>cognia-box-webhook/1</code> (o número muda se o formato mudar de forma incompatível)</td>
+</tr>
+<tr>
+<td><code>X-Cognia-Ts</code></td>
+<td>hora do envio, em segundos desde 1970 (UTC). Muda a cada tentativa.</td>
+</tr>
+<tr>
+<td><code>X-Cognia-Assinatura</code></td>
+<td><code>sha256=</code> + HMAC-SHA256 em hexadecimal minúsculo de <code>"&lt;X-Cognia-Ts&gt;.&lt;corpo&gt;"</code> com o token como chave (seção 11)</td>
+</tr>
+</tbody>
+</table></div>
+<ul>
+<li><strong>Corpo:</strong> um único objeto JSON por requisição (nunca lista), em UTF-8. Acentos vêm como caracteres, não como <code>ç</code>.</li>
+<li><strong>Tamanho:</strong> em torno de 1 KB. Não há foto nem vídeo dentro do JSON, só links.</li>
+<li><strong>Uma requisição por evento.</strong> Não há agrupamento em lote.</li>
+<li><strong>Origem:</strong> cada central Genesys envia da própria rede, então o IP de origem varia de cliente para cliente e pode
+  mudar. Não use liberação por IP como única proteção.</li>
+</ul>
+<hr />
+<h2 id="5-campos-do-json">5. Campos do JSON</h2>
+<p>Todos os campos vêm em todos os eventos, exceto <code>plate</code>, que só vem nos tipos de placa.</p>
+<div class="tab"><table>
+<thead>
+<tr>
+<th>campo</th>
+<th>tipo</th>
+<th>descrição</th>
+<th>exemplo</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>event_id</code></td>
+<td>texto</td>
+<td>Id único do evento. <strong>Igual em todas as retentativas.</strong> Use para deduplicar.</td>
+<td><code>"BX-0002-COG-01-48213"</code></td>
+</tr>
+<tr>
+<td><code>event_type_id</code></td>
+<td>inteiro</td>
+<td>Código do tipo de evento (seção 6).</td>
+<td><code>1</code></td>
+</tr>
+<tr>
+<td><code>event_description</code></td>
+<td>texto</td>
+<td>Nome do tipo de evento, em português (seção 6).</td>
+<td><code>"Detecção de pessoas"</code></td>
+</tr>
+<tr>
+<td><code>event_at</code></td>
+<td>texto</td>
+<td>Data e hora do evento, <code>AAAA-MM-DD HH:MM:SS</code>, <strong>horário de Brasília</strong> (America/Sao_Paulo), sem fuso no texto.</td>
+<td><code>"2026-10-19 23:14:05"</code></td>
+</tr>
+<tr>
+<td><code>camera_id</code></td>
+<td>texto</td>
+<td>Id da câmera. Estável: a mesma câmera manda sempre o mesmo id.</td>
+<td><code>"BX-0002-COG-01-cam133"</code></td>
+</tr>
+<tr>
+<td><code>camera_name</code></td>
+<td>texto</td>
+<td>Nome da câmera, como cadastrado na Genesys.</td>
+<td><code>"Portão social"</code></td>
+</tr>
+<tr>
+<td><code>camera_address</code></td>
+<td>texto</td>
+<td>Endereço do local da câmera (hoje, o mesmo do cliente).</td>
+<td><code>"Rua Exemplo, 100 - Centro, Campinas - SP, 13010-000"</code></td>
+</tr>
+<tr>
+<td><code>client_id</code></td>
+<td>texto</td>
+<td>Id do cliente (local monitorado). Estável.</td>
+<td><code>"detectia__residencial_aurora"</code></td>
+</tr>
+<tr>
+<td><code>client_name</code></td>
+<td>texto</td>
+<td>Nome do cliente.</td>
+<td><code>"Residencial Aurora"</code></td>
+</tr>
+<tr>
+<td><code>client_address</code></td>
+<td>texto</td>
+<td>Endereço do cliente.</td>
+<td><code>"Rua Exemplo, 100 - Centro, Campinas - SP, 13010-000"</code></td>
+</tr>
+<tr>
+<td><code>client_document_number</code></td>
+<td>texto</td>
+<td>Sempre <code>""</code>. A Genesys não envia CPF nem CNPJ.</td>
+<td><code>""</code></td>
+</tr>
+<tr>
+<td><code>app_client_id</code></td>
+<td>inteiro</td>
+<td>Sempre <code>0</code>. Mantido para compatibilidade.</td>
+<td><code>0</code></td>
+</tr>
+<tr>
+<td><code>token</code></td>
+<td>texto</td>
+<td>O token cadastrado para este cliente.</td>
+<td><code>"seu-token"</code></td>
+</tr>
+<tr>
+<td><code>event_url</code></td>
+<td>texto</td>
+<td>Página do evento com foto e vídeo, sem login, válida por 7 dias.</td>
+<td><code>"https://…/p/e/48213/pagina?exp=…&amp;sig=…"</code></td>
+</tr>
+<tr>
+<td><code>event_thumb</code></td>
+<td>texto</td>
+<td>Foto do evento (JPEG), sem login, válida por 7 dias.</td>
+<td><code>"https://…/p/e/48213/foto?exp=…&amp;sig=…"</code></td>
+</tr>
+<tr>
+<td><code>plate</code></td>
+<td>texto</td>
+<td><strong>Só nos tipos 13 e 26.</strong> A placa como o leitor de placas a registrou. Pode vir <code>""</code> se a leitura não foi registrada.</td>
+<td><code>"ABC1D23"</code></td>
+</tr>
+</tbody>
+</table></div>
+<p>Regras para o seu código:</p>
+<ul>
+<li><strong>Ids são textos opacos.</strong> Não tente extrair número, box ou câmera de dentro deles, porque o formato pode mudar.</li>
+<li><strong>Endereço</strong> pode vir <code>""</code> se o cliente não tem endereço cadastrado.</li>
+<li><strong>Campos novos</strong> podem ser acrescentados no futuro. O seu sistema deve ignorar campos que não conhece em vez de recusar.</li>
+<li><strong>A ordem das chaves</strong> no JSON não é garantida.</li>
+</ul>
+<hr />
+<h2 id="6-tipos-de-evento">6. Tipos de evento</h2>
+<p>Os códigos de 1 a 19 seguem a numeração que o mercado de monitoramento já usa. Os tipos da Genesys sem equivalente
+começam em 20.</p>
+<div class="tab"><table>
+<thead>
+<tr>
+<th><code>event_type_id</code></th>
+<th><code>event_description</code></th>
+<th>o que aconteceu</th>
+<th>traz <code>plate</code></th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>1</td>
+<td>Detecção de pessoas</td>
+<td>pessoa detectada numa área monitorada</td>
+<td>não</td>
+</tr>
+<tr>
+<td>3</td>
+<td>Detecção de ausência</td>
+<td>o posto que deveria estar ocupado (portaria, guarita) ficou vazio</td>
+<td>não</td>
+</tr>
+<tr>
+<td>5</td>
+<td>Detecção de aglomeração</td>
+<td>mais pessoas que o limite configurado na mesma área</td>
+<td>não</td>
+</tr>
+<tr>
+<td>13</td>
+<td>Carro na lista de alertas</td>
+<td>placa lida que está na lista de alerta do cliente</td>
+<td>sim</td>
+</tr>
+<tr>
+<td>20</td>
+<td>Detecção de veículo</td>
+<td>veículo detectado numa área monitorada</td>
+<td>não</td>
+</tr>
+<tr>
+<td>21</td>
+<td>Detecção de animal</td>
+<td>animal detectado numa área monitorada</td>
+<td>não</td>
+</tr>
+<tr>
+<td>22</td>
+<td>Cruzamento de linha</td>
+<td>alguém ou algo cruzou uma linha virtual configurada</td>
+<td>não</td>
+</tr>
+<tr>
+<td>23</td>
+<td>Abandono de posto</td>
+<td>o responsável saiu do posto e não voltou no tempo configurado</td>
+<td>não</td>
+</tr>
+<tr>
+<td>24</td>
+<td>Permanência</td>
+<td>pessoa parada numa área além do tempo configurado</td>
+<td>não</td>
+</tr>
+<tr>
+<td>25</td>
+<td>Surto de detecções</td>
+<td>muitas detecções seguidas na mesma câmera em pouco tempo</td>
+<td>não</td>
+</tr>
+<tr>
+<td>26</td>
+<td>Placa parada</td>
+<td>veículo com placa lida parado além do tempo configurado</td>
+<td>sim</td>
+</tr>
+</tbody>
+</table></div>
+<p><strong>Previstos (ainda não enviados):</strong> <code>11</code> Câmera offline e <code>16</code> Mudança de cena (câmera virada, tapada ou com imagem
+preta). Prepare o seu sistema para aceitar códigos que ele ainda não conhece, por exemplo tratando como "outro evento"
+e usando o texto de <code>event_description</code>.</p>
+<p>Os tipos que chegam de cada cliente dependem dos analíticos contratados para cada câmera.</p>
+<hr />
+<h2 id="7-exemplos-um-por-tipo">7. Exemplos, um por tipo</h2>
+<p>Os exemplos usam um cliente fictício. Os links estão encurtados com <code>…</code>; os reais trazem <code>exp</code> e <code>sig</code> completos.</p>
+<details open>
+<summary><b>1 · Detecção de pessoas</b></summary>
+
+
+<pre><code class="language-json">{
+  &quot;event_id&quot;: &quot;BX-0002-COG-01-48213&quot;,
+  &quot;camera_id&quot;: &quot;BX-0002-COG-01-cam133&quot;,
+  &quot;client_id&quot;: &quot;detectia__residencial_aurora&quot;,
+  &quot;camera_name&quot;: &quot;Portão social&quot;,
+  &quot;event_at&quot;: &quot;2026-10-19 23:14:05&quot;,
+  &quot;token&quot;: &quot;seu-token&quot;,
+  &quot;event_description&quot;: &quot;Detecção de pessoas&quot;,
+  &quot;camera_address&quot;: &quot;Rua Exemplo, 100 - Centro, Campinas - SP, 13010-000&quot;,
+  &quot;app_client_id&quot;: 0,
+  &quot;event_url&quot;: &quot;https://det.cogniagenesys.com.br/p/e/48213/pagina?exp=1761531245&amp;sig=9f2c…&quot;,
+  &quot;event_thumb&quot;: &quot;https://det.cogniagenesys.com.br/p/e/48213/foto?exp=1761531245&amp;sig=1ab7…&quot;,
+  &quot;client_name&quot;: &quot;Residencial Aurora&quot;,
+  &quot;client_document_number&quot;: &quot;&quot;,
+  &quot;client_address&quot;: &quot;Rua Exemplo, 100 - Centro, Campinas - SP, 13010-000&quot;,
+  &quot;event_type_id&quot;: 1
+}
+</code></pre>
+
+</details>
+
+<details>
+<summary><b>3 · Detecção de ausência</b></summary>
+
+
+<pre><code class="language-json">{
+  &quot;event_id&quot;: &quot;BX-0002-COG-01-48214&quot;,
+  &quot;camera_id&quot;: &quot;BX-0002-COG-01-cam120&quot;,
+  &quot;client_id&quot;: &quot;detectia__residencial_aurora&quot;,
+  &quot;camera_name&quot;: &quot;Guarita&quot;,
+  &quot;event_at&quot;: &quot;2026-10-19 02:41:10&quot;,
+  &quot;token&quot;: &quot;seu-token&quot;,
+  &quot;event_description&quot;: &quot;Detecção de ausência&quot;,
+  &quot;camera_address&quot;: &quot;Rua Exemplo, 100 - Centro, Campinas - SP, 13010-000&quot;,
+  &quot;app_client_id&quot;: 0,
+  &quot;event_url&quot;: &quot;https://det.cogniagenesys.com.br/p/e/48214/pagina?exp=…&amp;sig=…&quot;,
+  &quot;event_thumb&quot;: &quot;https://det.cogniagenesys.com.br/p/e/48214/foto?exp=…&amp;sig=…&quot;,
+  &quot;client_name&quot;: &quot;Residencial Aurora&quot;,
+  &quot;client_document_number&quot;: &quot;&quot;,
+  &quot;client_address&quot;: &quot;Rua Exemplo, 100 - Centro, Campinas - SP, 13010-000&quot;,
+  &quot;event_type_id&quot;: 3
+}
+</code></pre>
+
+</details>
+
+<details>
+<summary><b>5 · Detecção de aglomeração</b></summary>
+
+
+<pre><code class="language-json">{
+  &quot;event_id&quot;: &quot;BX-0002-COG-01-48215&quot;,
+  &quot;camera_id&quot;: &quot;BX-0002-COG-01-cam131&quot;,
+  &quot;client_id&quot;: &quot;detectia__residencial_aurora&quot;,
+  &quot;camera_name&quot;: &quot;Salão de festas&quot;,
+  &quot;event_at&quot;: &quot;2026-10-19 01:05:44&quot;,
+  &quot;token&quot;: &quot;seu-token&quot;,
+  &quot;event_description&quot;: &quot;Detecção de aglomeração&quot;,
+  &quot;camera_address&quot;: &quot;Rua Exemplo, 100 - Centro, Campinas - SP, 13010-000&quot;,
+  &quot;app_client_id&quot;: 0,
+  &quot;event_url&quot;: &quot;https://det.cogniagenesys.com.br/p/e/48215/pagina?exp=…&amp;sig=…&quot;,
+  &quot;event_thumb&quot;: &quot;https://det.cogniagenesys.com.br/p/e/48215/foto?exp=…&amp;sig=…&quot;,
+  &quot;client_name&quot;: &quot;Residencial Aurora&quot;,
+  &quot;client_document_number&quot;: &quot;&quot;,
+  &quot;client_address&quot;: &quot;Rua Exemplo, 100 - Centro, Campinas - SP, 13010-000&quot;,
+  &quot;event_type_id&quot;: 5
+}
+</code></pre>
+
+</details>
+
+<details>
+<summary><b>13 · Carro na lista de alertas</b> (traz <code>plate</code>)</summary>
+
+
+<pre><code class="language-json">{
+  &quot;event_id&quot;: &quot;BX-0002-COG-01-48230&quot;,
+  &quot;camera_id&quot;: &quot;BX-0002-COG-01-cam140&quot;,
+  &quot;client_id&quot;: &quot;detectia__residencial_aurora&quot;,
+  &quot;camera_name&quot;: &quot;LPR entrada&quot;,
+  &quot;event_at&quot;: &quot;2026-10-19 23:20:41&quot;,
+  &quot;token&quot;: &quot;seu-token&quot;,
+  &quot;event_description&quot;: &quot;Carro na lista de alertas&quot;,
+  &quot;camera_address&quot;: &quot;Rua Exemplo, 100 - Centro, Campinas - SP, 13010-000&quot;,
+  &quot;app_client_id&quot;: 0,
+  &quot;event_url&quot;: &quot;https://det.cogniagenesys.com.br/p/e/48230/pagina?exp=…&amp;sig=…&quot;,
+  &quot;event_thumb&quot;: &quot;https://det.cogniagenesys.com.br/p/e/48230/foto?exp=…&amp;sig=…&quot;,
+  &quot;client_name&quot;: &quot;Residencial Aurora&quot;,
+  &quot;client_document_number&quot;: &quot;&quot;,
+  &quot;client_address&quot;: &quot;Rua Exemplo, 100 - Centro, Campinas - SP, 13010-000&quot;,
+  &quot;event_type_id&quot;: 13,
+  &quot;plate&quot;: &quot;ABC1D23&quot;
+}
+</code></pre>
+
+</details>
+
+<details>
+<summary><b>20 · Detecção de veículo</b></summary>
+
+
+<pre><code class="language-json">{
+  &quot;event_id&quot;: &quot;BX-0002-COG-01-48231&quot;,
+  &quot;camera_id&quot;: &quot;BX-0002-COG-01-cam135&quot;,
+  &quot;client_id&quot;: &quot;detectia__residencial_aurora&quot;,
+  &quot;camera_name&quot;: &quot;Estacionamento&quot;,
+  &quot;event_at&quot;: &quot;2026-10-19 03:12:09&quot;,
+  &quot;token&quot;: &quot;seu-token&quot;,
+  &quot;event_description&quot;: &quot;Detecção de veículo&quot;,
+  &quot;camera_address&quot;: &quot;Rua Exemplo, 100 - Centro, Campinas - SP, 13010-000&quot;,
+  &quot;app_client_id&quot;: 0,
+  &quot;event_url&quot;: &quot;https://det.cogniagenesys.com.br/p/e/48231/pagina?exp=…&amp;sig=…&quot;,
+  &quot;event_thumb&quot;: &quot;https://det.cogniagenesys.com.br/p/e/48231/foto?exp=…&amp;sig=…&quot;,
+  &quot;client_name&quot;: &quot;Residencial Aurora&quot;,
+  &quot;client_document_number&quot;: &quot;&quot;,
+  &quot;client_address&quot;: &quot;Rua Exemplo, 100 - Centro, Campinas - SP, 13010-000&quot;,
+  &quot;event_type_id&quot;: 20
+}
+</code></pre>
+
+</details>
+
+<details>
+<summary><b>21 · Detecção de animal</b></summary>
+
+
+<pre><code class="language-json">{
+  &quot;event_id&quot;: &quot;BX-0002-COG-01-48232&quot;,
+  &quot;camera_id&quot;: &quot;BX-0002-COG-01-cam137&quot;,
+  &quot;client_id&quot;: &quot;detectia__residencial_aurora&quot;,
+  &quot;camera_name&quot;: &quot;Muro fundos&quot;,
+  &quot;event_at&quot;: &quot;2026-10-19 04:02:51&quot;,
+  &quot;token&quot;: &quot;seu-token&quot;,
+  &quot;event_description&quot;: &quot;Detecção de animal&quot;,
+  &quot;camera_address&quot;: &quot;Rua Exemplo, 100 - Centro, Campinas - SP, 13010-000&quot;,
+  &quot;app_client_id&quot;: 0,
+  &quot;event_url&quot;: &quot;https://det.cogniagenesys.com.br/p/e/48232/pagina?exp=…&amp;sig=…&quot;,
+  &quot;event_thumb&quot;: &quot;https://det.cogniagenesys.com.br/p/e/48232/foto?exp=…&amp;sig=…&quot;,
+  &quot;client_name&quot;: &quot;Residencial Aurora&quot;,
+  &quot;client_document_number&quot;: &quot;&quot;,
+  &quot;client_address&quot;: &quot;Rua Exemplo, 100 - Centro, Campinas - SP, 13010-000&quot;,
+  &quot;event_type_id&quot;: 21
+}
+</code></pre>
+
+</details>
+
+<details>
+<summary><b>22 · Cruzamento de linha</b></summary>
+
+
+<pre><code class="language-json">{
+  &quot;event_id&quot;: &quot;BX-0002-COG-01-48233&quot;,
+  &quot;camera_id&quot;: &quot;BX-0002-COG-01-cam137&quot;,
+  &quot;client_id&quot;: &quot;detectia__residencial_aurora&quot;,
+  &quot;camera_name&quot;: &quot;Muro fundos&quot;,
+  &quot;event_at&quot;: &quot;2026-10-19 00:47:30&quot;,
+  &quot;token&quot;: &quot;seu-token&quot;,
+  &quot;event_description&quot;: &quot;Cruzamento de linha&quot;,
+  &quot;camera_address&quot;: &quot;Rua Exemplo, 100 - Centro, Campinas - SP, 13010-000&quot;,
+  &quot;app_client_id&quot;: 0,
+  &quot;event_url&quot;: &quot;https://det.cogniagenesys.com.br/p/e/48233/pagina?exp=…&amp;sig=…&quot;,
+  &quot;event_thumb&quot;: &quot;https://det.cogniagenesys.com.br/p/e/48233/foto?exp=…&amp;sig=…&quot;,
+  &quot;client_name&quot;: &quot;Residencial Aurora&quot;,
+  &quot;client_document_number&quot;: &quot;&quot;,
+  &quot;client_address&quot;: &quot;Rua Exemplo, 100 - Centro, Campinas - SP, 13010-000&quot;,
+  &quot;event_type_id&quot;: 22
+}
+</code></pre>
+
+</details>
+
+<details>
+<summary><b>23 · Abandono de posto</b></summary>
+
+
+<pre><code class="language-json">{
+  &quot;event_id&quot;: &quot;BX-0002-COG-01-48234&quot;,
+  &quot;camera_id&quot;: &quot;BX-0002-COG-01-cam120&quot;,
+  &quot;client_id&quot;: &quot;detectia__residencial_aurora&quot;,
+  &quot;camera_name&quot;: &quot;Guarita&quot;,
+  &quot;event_at&quot;: &quot;2026-10-19 03:55:02&quot;,
+  &quot;token&quot;: &quot;seu-token&quot;,
+  &quot;event_description&quot;: &quot;Abandono de posto&quot;,
+  &quot;camera_address&quot;: &quot;Rua Exemplo, 100 - Centro, Campinas - SP, 13010-000&quot;,
+  &quot;app_client_id&quot;: 0,
+  &quot;event_url&quot;: &quot;https://det.cogniagenesys.com.br/p/e/48234/pagina?exp=…&amp;sig=…&quot;,
+  &quot;event_thumb&quot;: &quot;https://det.cogniagenesys.com.br/p/e/48234/foto?exp=…&amp;sig=…&quot;,
+  &quot;client_name&quot;: &quot;Residencial Aurora&quot;,
+  &quot;client_document_number&quot;: &quot;&quot;,
+  &quot;client_address&quot;: &quot;Rua Exemplo, 100 - Centro, Campinas - SP, 13010-000&quot;,
+  &quot;event_type_id&quot;: 23
+}
+</code></pre>
+
+</details>
+
+<details>
+<summary><b>24 · Permanência</b></summary>
+
+
+<pre><code class="language-json">{
+  &quot;event_id&quot;: &quot;BX-0002-COG-01-48235&quot;,
+  &quot;camera_id&quot;: &quot;BX-0002-COG-01-cam133&quot;,
+  &quot;client_id&quot;: &quot;detectia__residencial_aurora&quot;,
+  &quot;camera_name&quot;: &quot;Portão social&quot;,
+  &quot;event_at&quot;: &quot;2026-10-19 22:18:37&quot;,
+  &quot;token&quot;: &quot;seu-token&quot;,
+  &quot;event_description&quot;: &quot;Permanência&quot;,
+  &quot;camera_address&quot;: &quot;Rua Exemplo, 100 - Centro, Campinas - SP, 13010-000&quot;,
+  &quot;app_client_id&quot;: 0,
+  &quot;event_url&quot;: &quot;https://det.cogniagenesys.com.br/p/e/48235/pagina?exp=…&amp;sig=…&quot;,
+  &quot;event_thumb&quot;: &quot;https://det.cogniagenesys.com.br/p/e/48235/foto?exp=…&amp;sig=…&quot;,
+  &quot;client_name&quot;: &quot;Residencial Aurora&quot;,
+  &quot;client_document_number&quot;: &quot;&quot;,
+  &quot;client_address&quot;: &quot;Rua Exemplo, 100 - Centro, Campinas - SP, 13010-000&quot;,
+  &quot;event_type_id&quot;: 24
+}
+</code></pre>
+
+</details>
+
+<details>
+<summary><b>25 · Surto de detecções</b></summary>
+
+
+<pre><code class="language-json">{
+  &quot;event_id&quot;: &quot;BX-0002-COG-01-48236&quot;,
+  &quot;camera_id&quot;: &quot;BX-0002-COG-01-cam131&quot;,
+  &quot;client_id&quot;: &quot;detectia__residencial_aurora&quot;,
+  &quot;camera_name&quot;: &quot;Salão de festas&quot;,
+  &quot;event_at&quot;: &quot;2026-10-19 01:09:15&quot;,
+  &quot;token&quot;: &quot;seu-token&quot;,
+  &quot;event_description&quot;: &quot;Surto de detecções&quot;,
+  &quot;camera_address&quot;: &quot;Rua Exemplo, 100 - Centro, Campinas - SP, 13010-000&quot;,
+  &quot;app_client_id&quot;: 0,
+  &quot;event_url&quot;: &quot;https://det.cogniagenesys.com.br/p/e/48236/pagina?exp=…&amp;sig=…&quot;,
+  &quot;event_thumb&quot;: &quot;https://det.cogniagenesys.com.br/p/e/48236/foto?exp=…&amp;sig=…&quot;,
+  &quot;client_name&quot;: &quot;Residencial Aurora&quot;,
+  &quot;client_document_number&quot;: &quot;&quot;,
+  &quot;client_address&quot;: &quot;Rua Exemplo, 100 - Centro, Campinas - SP, 13010-000&quot;,
+  &quot;event_type_id&quot;: 25
+}
+</code></pre>
+
+</details>
+
+<details>
+<summary><b>26 · Placa parada</b> (traz <code>plate</code>)</summary>
+
+
+<pre><code class="language-json">{
+  &quot;event_id&quot;: &quot;BX-0002-COG-01-48237&quot;,
+  &quot;camera_id&quot;: &quot;BX-0002-COG-01-cam140&quot;,
+  &quot;client_id&quot;: &quot;detectia__residencial_aurora&quot;,
+  &quot;camera_name&quot;: &quot;LPR entrada&quot;,
+  &quot;event_at&quot;: &quot;2026-10-19 21:33:48&quot;,
+  &quot;token&quot;: &quot;seu-token&quot;,
+  &quot;event_description&quot;: &quot;Placa parada&quot;,
+  &quot;camera_address&quot;: &quot;Rua Exemplo, 100 - Centro, Campinas - SP, 13010-000&quot;,
+  &quot;app_client_id&quot;: 0,
+  &quot;event_url&quot;: &quot;https://det.cogniagenesys.com.br/p/e/48237/pagina?exp=…&amp;sig=…&quot;,
+  &quot;event_thumb&quot;: &quot;https://det.cogniagenesys.com.br/p/e/48237/foto?exp=…&amp;sig=…&quot;,
+  &quot;client_name&quot;: &quot;Residencial Aurora&quot;,
+  &quot;client_document_number&quot;: &quot;&quot;,
+  &quot;client_address&quot;: &quot;Rua Exemplo, 100 - Centro, Campinas - SP, 13010-000&quot;,
+  &quot;event_type_id&quot;: 26,
+  &quot;plate&quot;: &quot;BRA2E19&quot;
+}
+</code></pre>
+
+</details>
+
+<hr />
+<h2 id="8-foto-e-vídeo">8. Foto e vídeo</h2>
+<div class="tab"><table>
+<thead>
+<tr>
+<th>link</th>
+<th>o que devolve</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>event_thumb</code></td>
+<td>a foto do evento, <code>image/jpeg</code></td>
+</tr>
+<tr>
+<td><code>event_url</code></td>
+<td>uma página com a foto e o vídeo do evento, para abrir no navegador</td>
+</tr>
+</tbody>
+</table></div>
+<ul>
+<li>O vídeo é gravado em torno do momento do evento e fica pronto alguns segundos ou minutos depois do envio.</li>
+<li>Até ficar pronto, a página mostra <strong>"vídeo em processamento (recarregue)"</strong>.</li>
+<li>Se não ficar pronto em 30 minutos, a página mostra <strong>"vídeo indisponível"</strong>, e só a foto vale.</li>
+<li>Os links valem <strong>7 dias</strong> a partir do evento. Depois disso, ou com qualquer alteração no endereço (<code>exp</code>, <code>sig</code>,
+  número do evento), a resposta é <code>404</code>.</li>
+<li>O <code>404</code> é o mesmo para todos os motivos: link vencido, adulterado ou de evento que não existe.</li>
+<li>Cada link abre <strong>somente aquele evento</strong>. Não dá acesso a câmera ao vivo, a outros eventos nem ao portal.</li>
+<li><strong>Para guardar a mídia por mais de 7 dias</strong>, baixe a foto ao receber o evento e abra a página do vídeo dentro do prazo.</li>
+<li>Use os links exatamente como vieram. Não monte links a partir do <code>event_id</code>.</li>
+</ul>
+<hr />
+<h2 id="9-resposta-retentativas-e-prazos">9. Resposta, retentativas e prazos</h2>
+<div class="tab"><table>
+<thead>
+<tr>
+<th>a sua resposta</th>
+<th>o que a Genesys faz</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>2xx</code> (qualquer)</td>
+<td>entregue; não envia de novo</td>
+</tr>
+<tr>
+<td><code>408</code> ou <code>429</code></td>
+<td>tenta de novo</td>
+</tr>
+<tr>
+<td><code>5xx</code></td>
+<td>tenta de novo</td>
+</tr>
+<tr>
+<td>sem resposta em <strong>10 s</strong></td>
+<td>tenta de novo</td>
+</tr>
+<tr>
+<td>falha de rede, DNS ou TLS</td>
+<td>tenta de novo</td>
+</tr>
+<tr>
+<td>outro <code>4xx</code> (<code>400</code>, <code>401</code>, <code>403</code>, <code>404</code>, <code>422</code>…)</td>
+<td><strong>desiste</strong> daquele evento</td>
+</tr>
+<tr>
+<td><code>3xx</code></td>
+<td>não segue o redirecionamento; <strong>desiste</strong></td>
+</tr>
+</tbody>
+</table></div>
+<p><strong>Cronograma das tentativas</strong> (a espera dobra a cada falha, até 1 h entre tentativas, no máximo 10 tentativas):</p>
+<div class="tab"><table>
+<thead>
+<tr>
+<th>tentativa</th>
+<th>espera depois da falha anterior</th>
+<th>tempo aproximado desde o 1º envio</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>1</td>
+<td>—</td>
+<td>0</td>
+</tr>
+<tr>
+<td>2</td>
+<td>30 s</td>
+<td>30 s</td>
+</tr>
+<tr>
+<td>3</td>
+<td>1 min</td>
+<td>1 min 30 s</td>
+</tr>
+<tr>
+<td>4</td>
+<td>2 min</td>
+<td>3 min 30 s</td>
+</tr>
+<tr>
+<td>5</td>
+<td>4 min</td>
+<td>7 min 30 s</td>
+</tr>
+<tr>
+<td>6</td>
+<td>8 min</td>
+<td>15 min 30 s</td>
+</tr>
+<tr>
+<td>7</td>
+<td>16 min</td>
+<td>31 min 30 s</td>
+</tr>
+<tr>
+<td>8</td>
+<td>32 min</td>
+<td>1 h 03 min</td>
+</tr>
+<tr>
+<td>9</td>
+<td>1 h</td>
+<td>2 h 03 min</td>
+</tr>
+<tr>
+<td>10</td>
+<td>1 h</td>
+<td>3 h 03 min</td>
+</tr>
+</tbody>
+</table></div>
+<ul>
+<li>Depois da 10ª tentativa sem sucesso, o evento é dado como não entregue.</li>
+<li>Nenhum evento é enviado mais de <strong>24 h</strong> depois de acontecer (por exemplo, se a central ficou sem internet).</li>
+<li><strong>Responda rápido.</strong> Grave o evento numa fila e devolva <code>200</code>; processe depois. Resposta lenta vira retentativa e
+  evento duplicado.</li>
+<li><strong>Não use <code>401</code>/<code>403</code> para erro temporário seu</strong>: a Genesys desiste do evento. Para "tente depois", use <code>503</code> ou <code>429</code>.</li>
+</ul>
+<hr />
+<h2 id="10-ordem-e-duplicidade">10. Ordem e duplicidade</h2>
+<ul>
+<li><strong>A entrega é "pelo menos uma vez".</strong> O mesmo evento pode chegar mais de uma vez (por exemplo, se o seu <code>200</code> se
+  perdeu na rede). Deduplique por <code>event_id</code>.</li>
+<li><strong>A ordem de chegada não é garantida.</strong> Uma retentativa pode chegar depois de um evento mais novo. Ordene por <code>event_at</code>.</li>
+<li>Eventos de clientes diferentes chegam de forma independente, mesmo para o mesmo endereço.</li>
+</ul>
+<hr />
+<h2 id="11-segurança-e-verificação-da-assinatura">11. Segurança e verificação da assinatura</h2>
+<p>O seu endereço fica exposto na internet. Confira que cada envio veio da Genesys. Há duas formas; recomendamos a 2.</p>
+<ol>
+<li><strong>Token no corpo:</strong> compare o campo <code>token</code> do JSON com o token cadastrado.</li>
+<li><strong>Assinatura no cabeçalho (recomendado):</strong></li>
+<li>Leia o corpo <strong>exatamente como recebido</strong> (bytes), antes de qualquer parse.</li>
+<li>Monte o texto <code>X-Cognia-Ts</code> + <code>"."</code> + corpo.</li>
+<li>Calcule o HMAC-SHA256 desse texto usando o token como chave, em hexadecimal minúsculo.</li>
+<li>Compare <code>"sha256=" + resultado</code> com <code>X-Cognia-Assinatura</code>, em tempo constante.</li>
+<li>Recuse se <code>X-Cognia-Ts</code> estiver a mais de 5 minutos do seu relógio (proteção contra reenvio de requisição gravada).</li>
+</ol>
+<p>Outras regras:</p>
+<ul>
+<li>Só enviamos para <code>https</code> com certificado válido para o nome do seu endereço. Certificado autoassinado não funciona.</li>
+<li>O IP de origem varia; não use liberação por IP como única proteção.</li>
+<li>Troque o token (na ficha do cliente) se suspeitar de vazamento. Vale em até 15 minutos.</li>
+<li><strong>LGPD:</strong> nome e endereço do cliente, placa, foto e vídeo são dados pessoais. Trate-os conforme a sua política de
+  privacidade e guarde só pelo tempo necessário.</li>
+</ul>
+<h3 id="python">Python</h3>
+<pre><code class="language-python">import hashlib, hmac, time
+
+def veio_da_genesys(corpo: bytes, ts: str, assinatura: str, token: str) -&gt; bool:
+    if not ts.isdigit() or abs(time.time() - int(ts)) &gt; 300:
+        return False
+    esperado = &quot;sha256=&quot; + hmac.new(token.encode(), ts.encode() + b&quot;.&quot; + corpo, hashlib.sha256).hexdigest()
+    return hmac.compare_digest(esperado, assinatura or &quot;&quot;)
+</code></pre>
+<h3 id="nodejs">Node.js</h3>
+<pre><code class="language-javascript">const crypto = require(&quot;crypto&quot;);
+
+function veioDaGenesys(corpo /* Buffer */, ts, assinatura, token) {
+  if (!/^\d+$/.test(ts || &quot;&quot;) || Math.abs(Date.now() / 1000 - Number(ts)) &gt; 300) return false;
+  const esperado = &quot;sha256=&quot; + crypto.createHmac(&quot;sha256&quot;, token).update(`${ts}.`).update(corpo).digest(&quot;hex&quot;);
+  const a = Buffer.from(esperado), b = Buffer.from(assinatura || &quot;&quot;);
+  return a.length === b.length &amp;&amp; crypto.timingSafeEqual(a, b);
+}
+</code></pre>
+<h3 id="php">PHP</h3>
+<pre><code class="language-php">&lt;?php
+function veio_da_genesys(string $corpo, string $ts, string $assinatura, string $token): bool {
+    if (!ctype_digit($ts) || abs(time() - (int)$ts) &gt; 300) {
+        return false;
+    }
+    $esperado = 'sha256=' . hash_hmac('sha256', $ts . '.' . $corpo, $token);
+    return hash_equals($esperado, $assinatura);
+}
+
+// uso: $corpo = file_get_contents('php://input');
+//      $ts = $_SERVER['HTTP_X_COGNIA_TS'] ?? '';
+//      $assinatura = $_SERVER['HTTP_X_COGNIA_ASSINATURA'] ?? '';
+</code></pre>
+<h3 id="c-net-6-ou-mais-novo">C# (.NET 6 ou mais novo)</h3>
+<pre><code class="language-csharp">using System;
+using System.Linq;
+using System.Security.Cryptography;
+using System.Text;
+
+static bool VeioDaGenesys(byte[] corpo, string ts, string assinatura, string token)
+{
+    if (!long.TryParse(ts, out var t) || Math.Abs(DateTimeOffset.UtcNow.ToUnixTimeSeconds() - t) &gt; 300)
+        return false;
+    using var hmac = new HMACSHA256(Encoding.UTF8.GetBytes(token));
+    var dados = Encoding.UTF8.GetBytes(ts + &quot;.&quot;).Concat(corpo).ToArray();
+    var esperado = &quot;sha256=&quot; + Convert.ToHexString(hmac.ComputeHash(dados)).ToLowerInvariant();
+    return CryptographicOperations.FixedTimeEquals(
+        Encoding.UTF8.GetBytes(esperado), Encoding.UTF8.GetBytes(assinatura ?? &quot;&quot;));
+}
+</code></pre>
+<hr />
+<h2 id="12-receptor-completo-de-exemplo">12. Receptor completo de exemplo</h2>
+<p>Um receptor mínimo e correto em Python (Flask). Ele confere a assinatura, deduplica, responde rápido e deixa o
+processamento para depois.</p>
+<pre><code class="language-python">import json, os, queue, threading
+from flask import Flask, request
+
+TOKEN = os.environ[&quot;GENESYS_TOKEN&quot;]          # o mesmo token cadastrado na ficha do cliente
+app = Flask(__name__)
+fila: &quot;queue.Queue[dict]&quot; = queue.Queue()
+vistos: set[str] = set()                     # em produção: tabela com índice único em event_id
+
+@app.post(&quot;/genesys&quot;)
+def recebe():
+    corpo = request.get_data()                # bytes crus, ANTES de qualquer parse
+    if not veio_da_genesys(corpo, request.headers.get(&quot;X-Cognia-Ts&quot;, &quot;&quot;),
+                           request.headers.get(&quot;X-Cognia-Assinatura&quot;, &quot;&quot;), TOKEN):
+        return &quot;&quot;, 401
+    evento = json.loads(corpo)
+    if evento[&quot;event_id&quot;] in vistos:          # retentativa ou duplicado: já temos
+        return &quot;&quot;, 200
+    vistos.add(evento[&quot;event_id&quot;])
+    fila.put(evento)                          # processa fora da requisição
+    return &quot;&quot;, 200
+
+def trabalha():
+    while True:
+        e = fila.get()
+        print(e[&quot;event_at&quot;], e[&quot;event_type_id&quot;], e[&quot;event_description&quot;], e[&quot;client_name&quot;], e[&quot;camera_name&quot;])
+        # aqui: abrir o alarme no seu sistema, baixar e[&quot;event_thumb&quot;], etc.
+
+threading.Thread(target=trabalha, daemon=True).start()
+# veio_da_genesys: a função da seção 11
+</code></pre>
+<p>O mesmo em Node.js (Express). Note o <code>express.raw</code>, que guarda os bytes crus:</p>
+<pre><code class="language-javascript">const express = require(&quot;express&quot;);
+const app = express();
+const TOKEN = process.env.GENESYS_TOKEN;
+const vistos = new Set();                    // em produção: índice único em event_id
+
+app.post(&quot;/genesys&quot;, express.raw({ type: &quot;application/json&quot; }), (req, res) =&gt; {
+  if (!veioDaGenesys(req.body, req.get(&quot;X-Cognia-Ts&quot;), req.get(&quot;X-Cognia-Assinatura&quot;), TOKEN)) {
+    return res.sendStatus(401);
+  }
+  const evento = JSON.parse(req.body.toString(&quot;utf8&quot;));
+  if (vistos.has(evento.event_id)) return res.sendStatus(200);
+  vistos.add(evento.event_id);
+  setImmediate(() =&gt; processa(evento));      // responde já; processa depois
+  res.sendStatus(200);
+});
+
+function processa(e) {
+  console.log(e.event_at, e.event_type_id, e.event_description, e.client_name, e.camera_name);
+}
+
+app.listen(8080);
+// veioDaGenesys: a função da seção 11
+</code></pre>
+<hr />
+<h2 id="13-testar-o-seu-receptor-sem-a-genesys">13. Testar o seu receptor sem a Genesys</h2>
+<p>Este script manda ao seu endereço um evento assinado exatamente como a Genesys assina. Use-o enquanto desenvolve,
+antes de pedir o cadastro à revenda.</p>
+<pre><code class="language-python"># uso: GENESYS_TOKEN='seu-token' python testa_receptor.py https://seu-endereco/genesys
+import hashlib, hmac, json, os, sys, time, urllib.request
+
+url, token = sys.argv[1], os.environ[&quot;GENESYS_TOKEN&quot;]
+evento = {
+    &quot;event_id&quot;: &quot;TESTE-LOCAL-&quot; + str(int(time.time())), &quot;camera_id&quot;: &quot;TESTE-LOCAL-cam1&quot;,
+    &quot;client_id&quot;: &quot;cliente_teste&quot;, &quot;camera_name&quot;: &quot;TESTE local&quot;,
+    &quot;event_at&quot;: time.strftime(&quot;%Y-%m-%d %H:%M:%S&quot;), &quot;token&quot;: token,
+    &quot;event_description&quot;: &quot;Detecção de pessoas&quot;, &quot;camera_address&quot;: &quot;&quot;, &quot;app_client_id&quot;: 0,
+    &quot;event_url&quot;: &quot;https://exemplo.invalid/p/e/teste&quot;, &quot;event_thumb&quot;: &quot;https://exemplo.invalid/p/e/teste&quot;,
+    &quot;client_name&quot;: &quot;Cliente de teste&quot;, &quot;client_document_number&quot;: &quot;&quot;, &quot;client_address&quot;: &quot;&quot;, &quot;event_type_id&quot;: 1,
+}
+corpo = json.dumps(evento, ensure_ascii=False).encode(&quot;utf-8&quot;)
+ts = str(int(time.time()))
+assinatura = &quot;sha256=&quot; + hmac.new(token.encode(), ts.encode() + b&quot;.&quot; + corpo, hashlib.sha256).hexdigest()
+req = urllib.request.Request(url, data=corpo, method=&quot;POST&quot;, headers={
+    &quot;Content-Type&quot;: &quot;application/json&quot;, &quot;User-Agent&quot;: &quot;cognia-box-webhook/1&quot;,
+    &quot;X-Cognia-Ts&quot;: ts, &quot;X-Cognia-Assinatura&quot;: assinatura})
+try:
+    with urllib.request.urlopen(req, timeout=10) as r:
+        print(&quot;resposta:&quot;, r.status)
+except urllib.error.HTTPError as e:
+    print(&quot;resposta:&quot;, e.code)
+</code></pre>
+<p>Confira também:</p>
+<ul>
+<li><strong>Assinatura errada recusada:</strong> troque uma letra do token no script; o seu receptor deve responder <code>401</code> e não gravar
+  nada.</li>
+<li><strong>Duplicado:</strong> mande o mesmo corpo duas vezes, com o mesmo <code>event_id</code>; o seu sistema deve gravar uma vez só.</li>
+</ul>
+<hr />
+<h2 id="14-solução-de-problemas">14. Solução de problemas</h2>
+<div class="tab"><table>
+<thead>
+<tr>
+<th>sintoma</th>
+<th>causa provável</th>
+<th>o que fazer</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Teste mostra <strong>Falha de TLS/DNS</strong></td>
+<td>o nome não resolve, certificado vencido, autoassinado ou de outro nome</td>
+<td>teste com <code>curl -v https://seu-endereco</code>; use certificado válido (por exemplo Let's Encrypt)</td>
+</tr>
+<tr>
+<td>Teste mostra <strong>Endereço não público</strong></td>
+<td>o nome resolve para IP interno (10.x, 192.168.x, 127.x)</td>
+<td>publique o receptor na internet ou num proxy público</td>
+</tr>
+<tr>
+<td>Teste mostra <strong>Tempo esgotado</strong></td>
+<td>firewall bloqueando, ou o receptor demora mais de 10 s</td>
+<td>libere a porta 443 (ou a do endereço); responda antes de processar</td>
+</tr>
+<tr>
+<td>Teste mostra <strong>Recusado (401/403)</strong></td>
+<td>o seu receptor recusou a assinatura ou o token</td>
+<td>confira o token cadastrado e se a assinatura usa o corpo cru (bytes), não o JSON reformatado</td>
+</tr>
+<tr>
+<td>Teste mostra <strong>Recusado (404/405)</strong></td>
+<td>caminho ou método errado</td>
+<td>o endereço precisa aceitar <code>POST</code> exatamente no caminho cadastrado</td>
+</tr>
+<tr>
+<td>Assinatura nunca confere</td>
+<td>o framework reformatou o corpo antes da verificação</td>
+<td>leia os bytes crus (<code>request.get_data()</code>, <code>express.raw</code>, <code>php://input</code>)</td>
+</tr>
+<tr>
+<td>Assinatura falha "às vezes"</td>
+<td>relógio do servidor fora de hora</td>
+<td>sincronize com NTP; a janela é de 5 min</td>
+</tr>
+<tr>
+<td>Eventos repetidos</td>
+<td>a sua resposta chegou depois de 10 s, ou se perdeu</td>
+<td>responda <code>200</code> antes de processar; deduplique por <code>event_id</code></td>
+</tr>
+<tr>
+<td>Link da foto dá <code>404</code></td>
+<td>passou de 7 dias, ou o link foi alterado</td>
+<td>baixe a foto ao receber o evento</td>
+</tr>
+<tr>
+<td>Página mostra "vídeo indisponível"</td>
+<td>o vídeo não ficou pronto em 30 min</td>
+<td>use a foto; avise o suporte se for frequente</td>
+</tr>
+<tr>
+<td>Parou de chegar evento</td>
+<td>integração desligada, endereço trocado ou o seu sistema respondendo <code>4xx</code></td>
+<td>peça à revenda para conferir a ficha do cliente e usar Enviar evento de teste</td>
+</tr>
+</tbody>
+</table></div>
+<hr />
+<h2 id="15-perguntas-frequentes">15. Perguntas frequentes</h2>
+<p><strong>Recebo eventos de todos os clientes num endereço só?</strong>
+Pode. Cada cliente tem o seu próprio cadastro, e a revenda pode usar o mesmo endereço e token em vários clientes. Para
+separar, use <code>client_id</code>.</p>
+<p><strong>Posso escolher quais tipos de evento recebo?</strong>
+Não na Genesys: você recebe todos os eventos que viram alarme na central. Filtre no seu sistema por <code>event_type_id</code>.</p>
+<p><strong>O evento traz a confiança da detecção?</strong>
+Não. Todo evento enviado já passou pela análise e virou alarme na central.</p>
+<p><strong>O vídeo vem no JSON?</strong>
+Não. O JSON tem só links. A foto é o <code>event_thumb</code>; o vídeo está na página <code>event_url</code>.</p>
+<p><strong>Os eventos chegam de madrugada também?</strong>
+Sim, sempre que o cliente estiver com a análise ativa naquele horário.</p>
+<p><strong>Posso receber em HTTP sem S?</strong>
+Não. Só HTTPS com certificado válido.</p>
+<p><strong>Posso usar uma porta diferente de 443?</strong>
+Pode: cadastre o endereço com a porta, <code>https://host:8443/caminho</code>.</p>
+<p><strong>O que acontece se o meu sistema ficar fora do ar por algumas horas?</strong>
+Cada evento é tentado até 10 vezes, durante cerca de 3 horas (seção 9). O que não for entregue nesse período se perde
+para a integração. O evento continua registrado na central de operações.</p>
+<p><strong>Vocês enviam CPF ou CNPJ do cliente?</strong>
+Não. <code>client_document_number</code> vem sempre vazio.</p>
+<p><strong>Como sei que um evento é de teste?</strong>
+<code>camera_name</code> é <code>"TESTE Cognia"</code> (seção 3).</p>
+<hr />
+<h2 id="16-compatibilidade">16. Compatibilidade</h2>
+<p>O corpo segue o formato de evento de vídeo que o mercado de monitoramento já usa. Se o seu sistema já recebe esse
+formato, na maioria dos casos basta cadastrar o endereço e o token. Os pontos específicos da Genesys:</p>
+<div class="tab"><table>
+<thead>
+<tr>
+<th>ponto</th>
+<th>Genesys</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>event_type_id</code></td>
+<td>campo com o código do tipo. Se o seu sistema identifica o tipo pelo texto de <code>event_description</code>, pode ignorá-lo.</td>
+</tr>
+<tr>
+<td>Ids</td>
+<td>textos (ex.: <code>"BX-0002-COG-01-cam133"</code>), não números curtos.</td>
+</tr>
+<tr>
+<td><code>client_document_number</code></td>
+<td>sempre <code>""</code>.</td>
+</tr>
+<tr>
+<td><code>app_client_id</code></td>
+<td>sempre <code>0</code>.</td>
+</tr>
+<tr>
+<td>Assinatura</td>
+<td>cabeçalhos <code>X-Cognia-Ts</code> e <code>X-Cognia-Assinatura</code>; quem não usa, ignora.</td>
+</tr>
+<tr>
+<td>Códigos não usados</td>
+<td>2, 4, 6–10, 12, 14, 15 e 17–19 não são enviados hoje (11 e 16 estão previstos).</td>
+</tr>
+</tbody>
+</table></div>
+<hr />
+<h2 id="17-histórico-de-versões">17. Histórico de versões</h2>
+<div class="tab"><table>
+<thead>
+<tr>
+<th>versão</th>
+<th>data</th>
+<th>mudança</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>1.0</td>
+<td>20/10/2026</td>
+<td>primeira versão publicada</td>
+</tr>
+</tbody>
+</table></div>
+<p>Mudanças compatíveis (campo novo, tipo novo) entram sem aviso prévio. Mudanças incompatíveis mudam o <code>User-Agent</code>
+(<code>cognia-box-webhook/2</code>) e são avisadas com antecedência a quem tem integração ativa.</p>
+<hr />
+<h2 id="18-suporte">18. Suporte</h2>
+<p>Dúvidas sobre a integração: <strong>moraginski@gmail.com</strong>.</p>
+<p>Ao escrever, mande o <code>client_id</code>, o <code>event_id</code> (se for sobre um evento) e a data e hora aproximadas. Nunca mande o token.</p>
+</main>
+<script src="https://cdn.jsdelivr.net/npm/mermaid@11.4.1/dist/mermaid.min.js"></script>
+<script>mermaid.initialize({startOnLoad:true,theme:window.matchMedia("(prefers-color-scheme: dark)").matches?"dark":"default"});</script>
+</body></html>
